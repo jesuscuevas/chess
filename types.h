@@ -16,21 +16,21 @@ enum GameResult { IN_PROGRESS, DRAW, WHITE_WINS, BLACK_WINS };
 
 // represents a coordinate
 struct Coord {
-	File file;
-	Rank rank;
+    File file;
+    Rank rank;
 };
 
 // represents an offset from a coordinate
 struct CoordOffset {
-	int8_t dfile;
-	int8_t drank;
+    int8_t dfile;
+    int8_t drank;
 };
 
 // represents a piece
 struct Piece {
-	PieceColor color;
-	PieceType type;
-	Coord location;
+    PieceColor color;
+    PieceType type;
+    Coord location;
 };
 
 // alias for piece pointers
@@ -38,54 +38,54 @@ typedef Piece * Square;
 
 // represents info about the current game state
 struct GameState {
-	bool canCastle[2][2]; // on which side(s) of the board each color has castling rights
-	Piece* passant; // candidate for being captured en passant
+    bool canCastle[2][2]; // on which side(s) of the board each color has castling rights
+    Piece* passant; // candidate for being captured en passant
 };
 
 // represents a move in memory
 struct Move {
-	char * algebraic; // algebraic notation move description
-	Piece * piece; // the moving piece
-	Piece * capture; // the piece captured by the move (if there is one)
-	Coord from, to; // starting and ending positions
-	MoveType moveType; // type of move (normal, castling, promotion)
-	CaptureType captureType; // type of capture (none, normal, en passant)
-	PieceType promoteTo; // type of piece to promote to (PAWN i.e. NULL implies no promotion)
-	bool check; // whether the move causes check (to the opponent)
-	bool mate; // whether the move causes either checkmate or stalemate
-	int evaluation; // numerical evaluation of move (not always calculated)
+    char * algebraic; // algebraic notation move description
+    Piece * piece; // the moving piece
+    Piece * capture; // the piece captured by the move (if there is one)
+    Coord from, to; // starting and ending positions
+    MoveType moveType; // type of move (normal, castling, promotion)
+    CaptureType captureType; // type of capture (none, normal, en passant)
+    PieceType promoteTo; // type of piece to promote to (PAWN i.e. NULL implies no promotion)
+    bool check; // whether the move causes check (to the opponent)
+    bool mate; // whether the move causes either checkmate or stalemate
+    int evaluation; // numerical evaluation of move (not always calculated)
 
-	Move() {
-		algebraic = NULL;
-		piece = NULL;
-		capture = NULL;
-		from = {(File) -1, (Rank) -1};
-		to = {(File) 0, (Rank) 0};
-		moveType = MoveType::NORMAL;
-		captureType = CaptureType::NONE;
-		promoteTo = PieceType::PAWN;
-		check = false;
-		mate = false;
-		evaluation = 0;
-	}
+    Move() {
+        algebraic = NULL;
+        piece = NULL;
+        capture = NULL;
+        from = {(File) -1, (Rank) -1};
+        to = {(File) 0, (Rank) 0};
+        moveType = MoveType::NORMAL;
+        captureType = CaptureType::NONE;
+        promoteTo = PieceType::PAWN;
+        check = false;
+        mate = false;
+        evaluation = 0;
+    }
 
-	Move(const Move& move) {
-		memcpy(this, &move, sizeof(Move));
+    Move(const Move& move) {
+        memcpy(this, &move, sizeof(Move));
 
-		// if move has an algebraic notation string, make a deep copy of it to avoid double frees
-		if(move.algebraic) {
-			size_t size = strlen(move.algebraic) + 1;
-			algebraic = (char *) malloc(size);
-			strcpy(algebraic, move.algebraic);
-		}
-	}
+        // if move has an algebraic notation string, make a deep copy of it to avoid double frees
+        if(move.algebraic) {
+            size_t size = strlen(move.algebraic) + 1;
+            algebraic = (char *) malloc(size);
+            strcpy(algebraic, move.algebraic);
+        }
+    }
 
-	~Move() {
-		if(algebraic) {
-			free(algebraic);
-			algebraic = NULL;
-		}
-	}
+    ~Move() {
+        if(algebraic) {
+            free(algebraic);
+            algebraic = NULL;
+        }
+    }
 };
 
 /* operator overloads */
@@ -94,43 +94,43 @@ File operator+(File file, int offset) { return file + (int8_t) offset; }
 File operator++(File& file, int) { return (file = (File) (file + (int8_t) 1)); }
 
 bool operator==(const Coord& coord1, const Coord& coord2) {
-	return (coord1.rank == coord2.rank) && (coord1.file == coord2.file);
+    return (coord1.rank == coord2.rank) && (coord1.file == coord2.file);
 }
 
 std::ostream& operator<<(std::ostream& stream, Coord coord) {
-	return stream << (char)(0x60 + coord.file) << coord.rank;
+    return stream << (char)(0x60 + coord.file) << coord.rank;
 }
 
 Coord operator+(Coord coord, CoordOffset offset) {
-	return { (File) ((int8_t) coord.file + offset.dfile), (Rank) ((int8_t) coord.rank + offset.drank) };
+    return { (File) ((int8_t) coord.file + offset.dfile), (Rank) ((int8_t) coord.rank + offset.drank) };
 }
 
 Coord operator-(Coord coord, CoordOffset offset) {
-	return { (File) ((int8_t) coord.file - offset.dfile), (Rank) ((int8_t) coord.rank - offset.drank) };
+    return { (File) ((int8_t) coord.file - offset.dfile), (Rank) ((int8_t) coord.rank - offset.drank) };
 }
 
 CoordOffset operator-(CoordOffset offset) {
-	return { (int8_t)-offset.dfile, (int8_t)-offset.drank };
+    return { (int8_t)-offset.dfile, (int8_t)-offset.drank };
 }
 
 CoordOffset operator+(CoordOffset offset1, CoordOffset offset2) {
-	return { (int8_t)(offset1.dfile + offset2.dfile), (int8_t)(offset1.drank + offset2.drank) };
+    return { (int8_t)(offset1.dfile + offset2.dfile), (int8_t)(offset1.drank + offset2.drank) };
 }
 
 CoordOffset operator-(CoordOffset offset1, CoordOffset offset2) {
-	return { (int8_t)(offset1.dfile - offset2.dfile), (int8_t)(offset1.drank - offset2.drank) };
+    return { (int8_t)(offset1.dfile - offset2.dfile), (int8_t)(offset1.drank - offset2.drank) };
 }
 
 bool operator==(const Piece& p1, const Piece& p2) {
-	return (p1.color == p2.color) && (p1.location == p2.location) && (p1.type == p2.type);
+    return (p1.color == p2.color) && (p1.location == p2.location) && (p1.type == p2.type);
 }
 
 /* constants */
 const PieceType PIECE_TYPES[6] = {
-	PieceType::PAWN,
-	PieceType::KNIGHT,
-	PieceType::BISHOP,
-	PieceType::ROOK,
-	PieceType::QUEEN,
-	PieceType::KING
+    PieceType::PAWN,
+    PieceType::KNIGHT,
+    PieceType::BISHOP,
+    PieceType::ROOK,
+    PieceType::QUEEN,
+    PieceType::KING
 };
