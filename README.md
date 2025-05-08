@@ -9,6 +9,6 @@ A simple chess engine written in C++ that conforms to the rules of chess as defi
 
 ## To Run
 ```sh
-g++ -o chess chess.cpp
+g++ -o chess chess.cpp --std=c++20
 ./chess [-d engine-depth] [-f FEN-file]
 ```
