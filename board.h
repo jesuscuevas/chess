@@ -17,9 +17,6 @@
 // resolves to the (absolute) rank number of `color`'s `n`th rank (1-8)
 #define RANK(color, n) ((Rank) (color ? (9 - n) : n))
 
-// resolves to the color that's favored in a position given an evaluation number (white is returned if the evaluation is 0)
-#define EVAL_COLOR(evaluation) ((evaluation >= 0) ? PieceColor::WHITE : PieceColor::BLACK)
-
 // returns an evaluation number that encodes the number of moves required for the fastest checkmate in the position
 #define MATE_IN(color, n) (color ? (INT_MIN + n) : (INT_MAX - n))
 
@@ -28,6 +25,15 @@
 
 // returns whether or not the evaluation number `evaluation` is intended to represent a checkmate
 #define IS_MATE(evaluation) (EVAL_COLOR(evaluation) ^ (bool) (evaluation & 0x40000000))
+
+// returns the color that's favored in a position given an evaluation number (white is returned by default if the evaluation is even)
+#define EVAL_COLOR(evaluation) ((evaluation < 0) ? PieceColor::BLACK : PieceColor::WHITE)
+
+// returns whether evaluation `eval1` is better for `color`than `eval2`
+#define BETTER(color, eval1, eval2) (color ? (eval1 < eval2) : (eval1 > eval2))
+
+// returns the opposite color of `color`
+#define OPPOSITE(color) ((PieceColor) (color ^ 1))
 
 /* Checkmate evaluation system:
     INT_MAX = Mate in 0 (for white)
@@ -58,8 +64,8 @@ const char PIECES[2][7][4] = {
     {"\u265f", "\u265e", "\u265d", "\u265c", "\u265b", "\u265a"}
 };
 
-// piece values
-const int PIECE_VALUES[6] = { 1, 3, 3, 5, 9, 999 };
+// piece values (centipawns)
+const int PIECE_VALUES[6] = { 100, 300, 300, 500, 900, 99999 };
 
 // unit vectors for rank and file offsets
 const CoordOffset DELTA_RANK = {0, 1};
@@ -78,7 +84,7 @@ private:
     SquareColor colors[9][9]; // square colors used for display() calls
     Square board[9][9] = {NULL}; // board representation
     std::stack<GameState> states; // stack of board state information
-    std::stack<Move> moves; // stack of moves
+    std::list<Move> moves; // list of moves made this game
     std::map<PieceType, std::list<Piece>> pieces[2]; // color-based list of pieces (captured or not)
     std::map<PieceType, std::list<Piece *>> remaining[2]; // remaining pieces (pieces still on the board)
     std::map<PieceType, std::list<Piece *>> captured[2]; // captured pieces (pieces no longer on the board)
@@ -89,10 +95,10 @@ private:
     class Range {
     private:
         CoordOffset start, step, _next;
-        int i;
+        int i = 0;
 
     public:
-        Range(CoordOffset start, CoordOffset step) : start(start), _next(start), step(step), i(0) {}
+        Range(CoordOffset start, CoordOffset step) : start(start), _next(start), step(step) {}
 
         CoordOffset next() {
             CoordOffset next = _next;
@@ -171,8 +177,8 @@ public:
             rank = RANK(color, 1);
 
             // place rooks
-            Piece queenRook = { color, PieceType::ROOK, {File::A, rank}};
-            pieces[color][PieceType::ROOK].push_back(queenRook);
+            Piece queensRook = { color, PieceType::ROOK, {File::A, rank}};
+            pieces[color][PieceType::ROOK].push_back(queensRook);
             board[rank][A] = &pieces[color][PieceType::ROOK].back();
 
             Piece kingsRook = { color, PieceType::ROOK, {File::H, rank}};
@@ -397,30 +403,29 @@ public:
     // to its king is still said to be 'attacking' the squares it would otherwise be able to capture on had it not been pinned 
     // (FIDE Handbook E. 3.1.2).
     bool isAttacked(PieceColor color, Coord location) const {
-        PieceColor enemyColor = (PieceColor)((color + 1) % 2);
         Board& board = (Board&)*this;
 
         // king
         for(const CoordOffset offset : PIECE_OFFSETS[color][PieceType::KING]) {
-            if(abs(offset.dfile) > 1) continue;
+            if(abs(offset.dfile) > 1) continue; // king can't castle into a capture
             Coord coord = location + offset;
             if (!onBoard(coord) || !board[coord]) continue;
 
             const Piece& piece = *board[coord];
-            if (piece.color == enemyColor && piece.type == PieceType::KING) return true;
+            if (piece.color == color && piece.type == PieceType::KING) return true;
         }
 
         // pawns
-        if (enemyColor ? (location.rank < 7) : (location.rank > 2)) {
-            Rank rank = color ? (location.rank - 1) : (location.rank + 1); // black (1) : white (0)
+        if (color ? (location.rank < 7) : (location.rank > 2)) {
+            Rank rank = color ? (location.rank + 1) : (location.rank - 1);
             File file = location.file;
             if (file > A) {
                 const Square& square = this->board[rank][file - 1];
-                if (square && square->color == enemyColor && square->type == PAWN) return true;
+                if (square && square->color == color && square->type == PAWN) return true;
             }
             if (file < H) {
                 const Square& square = this->board[rank][file + 1];
-                if (square && square->color == enemyColor && square->type == PAWN) return true;
+                if (square && square->color == color && square->type == PAWN) return true;
             }
         }
 
@@ -430,7 +435,7 @@ public:
             if (!onBoard(coord) || !board[coord]) continue;
 
             const Piece& piece = *board[coord];
-            if (piece.color == enemyColor && piece.type == PieceType::KNIGHT) return true;
+            if (piece.color == color && piece.type == PieceType::KNIGHT) return true;
         }
 
         // ranged pieces
@@ -443,7 +448,7 @@ public:
                 if (square) {
                     PieceType type = (i / 4) ? PieceType::BISHOP : PieceType::ROOK;
                     Piece& piece = *square;
-                    if (piece.color == color) break;
+                    if (piece.color != color) break;
                     if (piece.type == PieceType::QUEEN || square->type == type) return true;
                     break;
                 }
@@ -458,7 +463,7 @@ public:
     bool inCheck(PieceColor color) const {
         const Piece * king = remaining[color].at(PieceType::KING).front();
 
-        return isAttacked(king->color, king->location);
+        return isAttacked(OPPOSITE(color), king->location);
     }
 
     // execute a move (assumes valid input)
@@ -492,8 +497,8 @@ public:
                     int8_t df = dfile / abs(dfile);
                     Side side = (Side) ((filePrime - 1) / 4); // A - D => queenside, E - H => kingside
                     Square& rookSource = board[rank][side ? H : A];
-                    Square& rookTarget = board[rank][file + df];
-                    rookSource->location.file = file + df;
+                    Square& rookTarget = board[rank][side ? File::F : File::D];
+                    rookSource->location.file = side ? File::F : File::D;
                     rookTarget = rookSource;
                     rookSource = NULL;
                 }
@@ -521,7 +526,7 @@ public:
                 pieces[color][PAWN].remove(*source); // remove original piece from piece list
                 pieces[color][promotedPiece.type].push_back(promotedPiece); // add promoted piece to piece list
                 remaining[color][promotedPiece.type].push_back(&pieces[color][promotedPiece.type].back()); // add promoted piece to remaining list
-                source = &pieces[color][promotedPiece.type].back(); // replace original piece with promoted piece on the board
+                source = remaining[color][promotedPiece.type].back(); // replace original piece with promoted piece on the board
                 move.piece = source; // update move struct to point to the promoted piece
             } else if (color ? (rank == rankPrime + 2) : (rank + 2 == rankPrime))
                 state.passant = source;
@@ -537,8 +542,8 @@ public:
         } else if (move.captureType == CaptureType::NORMAL) {
             Piece * piece = target;
             if(piece->type == ROOK && piece->location.rank == RANK(piece->color, 1)) {
-                if(piece->location.file == A) states.top().canCastle[piece->color][Side::QUEEN] = false;
-                else if(piece->location.file == H) states.top().canCastle[piece->color][Side::KING] = false;
+                if(piece->location.file == A) state.canCastle[piece->color][Side::QUEEN] = false;
+                else if(piece->location.file == H) state.canCastle[piece->color][Side::KING] = false;
             }
             remaining[piece->color][piece->type].remove(piece);
             captured[piece->color][piece->type].push_back(piece);
@@ -549,15 +554,15 @@ public:
         target = source;
         source = NULL;
 
-        // push move and board state data to their respective stacks
-        moves.push(move);
+        // push move info and board state to their respective data structures
+        moves.push_back(move);
         states.push(state);
     }
 
     // undo a move (temporarily assumes that `move` is on the top of the `moves` stack)
     void unmove(Move& move) {
         Piece * sourcePiece = move.piece;
-        PieceColor color = (PieceColor) ((sourcePiece->color + 1) % 2);
+        PieceColor color = OPPOSITE(sourcePiece->color);
 
         // locate captured piece (if there is one)
         Piece * targetPiece = (move.captureType == CaptureType::EN_PASSANT) ? captured[color][PAWN].back() : move.capture;
@@ -565,7 +570,7 @@ public:
         // undo game-ending changes
         result = GameResult::IN_PROGRESS;
 
-        // undo piece captures
+        // undo piece capture(s)
         if (move.captureType != CaptureType::NONE) {
             const PieceType type = targetPiece->type;
             captured[color][type].remove(targetPiece);
@@ -593,7 +598,6 @@ public:
         
         // if move is a castling move, then also move the rook back to its original square
         case MoveType::CASTLE:
-            Coord rookLocation = move.from;
             switch (move.to.file) {
                 case File::C:
                 board[move.from.rank][File::A] = board[move.from.rank][File::D];
@@ -610,8 +614,8 @@ public:
         move.piece->location = move.from;
         if(move.captureType != CaptureType::NORMAL) (*this)[move.to] = NULL;
 
-        // remove the move from the stack
-        moves.pop();
+        // remove the move from move list
+        moves.pop_back();
         states.pop();
     }
 
@@ -729,18 +733,19 @@ public:
             else { for (int i = 1; i < abs(drank); i++) if (board[rank + i * dr][file]) return false; }
             break;
         case PieceType::KING:
-            if (abs(drank) > 1) return false; // moving > 1 rank at a time
+            if (abs(drank) > 1 || abs(dfile) > 2) return false;
             if (abs(dfile) == 2) { // castling
-                if (drank || rank != RANK(color, 1) || file != E || !state.canCastle[color][(filePrime - 1) / 4] || inCheck(color)) { return false; }
+                Side side = (Side) ((filePrime - 1) / 4);
+                if (drank || rank != RANK(color, 1) || file != E || !state.canCastle[color][side] || inCheck(color)) { return false; }
                 switch (filePrime) {
                 case File::C: // queenside
                     if (board[rank][File::B]) return false;
                     for (File f = File::C; f <= File::D; f++)
-                        if (board[rank][f] || isAttacked(color, { f, rank })) return false;
+                        if (board[rank][f] || isAttacked(OPPOSITE(color), { f, rank })) return false;
                     break;
                 case File::G: // kingside
                     for (File f = File::F; f <= File::G; f++)
-                        if (board[rank][f] || isAttacked(color, { f, rank })) return false;
+                        if (board[rank][f] || isAttacked(OPPOSITE(color), { f, rank })) return false;
                     break;
                 default:
                     return false;
@@ -755,7 +760,7 @@ public:
 
         // check for checks
         bool check = inCheck(color);
-        move.check = inCheck((PieceColor) ((color + 1) % 2));
+        move.check = inCheck(OPPOSITE(color));
 
         // undo move
         this->unmove(move);
@@ -770,9 +775,9 @@ public:
         // simulate move
         this->move(color, move);
 
-        // check for checkmate or stalemate
+        // check for checkmate or stalemate (absence of legal responses to move)
         move.mate = true;
-        PieceColor enemyColor = (PieceColor) ((color + 1) % 2);
+        PieceColor enemyColor = OPPOSITE(color);
         for (Move& candidate : getCandidateMoves(enemyColor)) {
             if (isValid(enemyColor, candidate)) {
                 move.mate = false;
@@ -782,7 +787,7 @@ public:
 
         // backtrack
         this->unmove(move);
-
+ 
         return true;
     }
 
@@ -797,7 +802,7 @@ public:
     }
 
     // evaluate terminal node
-    int evaluate() const {
+    int evaluate() {
         
         switch(result) {
             case GameResult::DRAW: return 0;
@@ -808,15 +813,42 @@ public:
         
         int evaluation = 0;
 
+        // material evaluation
         for(PieceType type : PIECE_TYPES) {
-            if(remaining[WHITE].contains(type)) evaluation += remaining[WHITE].at(type).size() * PIECE_VALUES[type];
-            if(remaining[BLACK].contains(type)) evaluation -= remaining[BLACK].at(type).size() * PIECE_VALUES[type];
+            if(!remaining[WHITE].contains(type)) evaluation += remaining[WHITE].at(type).size() * PIECE_VALUES[type];
+            if(!remaining[BLACK].contains(type)) evaluation -= remaining[BLACK].at(type).size() * PIECE_VALUES[type];
         }
+
+        // positional evaluation
+        int pawns_on_file[2][10] = {0}; // number of pawns on each file
+        int doubled_pawns = 0; // difference in # of doubled pawns
+        int isolated_pawns = 0; // difference in # of isolated pawns
+
+        // count number of pawns on each file
+        for(PieceColor color : {WHITE, BLACK})
+            for(Piece * pawn : remaining[color].at(PAWN))
+                pawns_on_file[color][pawn->location.file]++;
+
+        for(File file = A; file <= H; file++) {
+            // doubled pawns (doubled pawns 0.5, tripled pawns 1.0, etc.)
+            if(pawns_on_file[WHITE][file] > 1) doubled_pawns += pawns_on_file[WHITE][file] - 1;
+            if(pawns_on_file[BLACK][file] > 1) doubled_pawns -= pawns_on_file[BLACK][file] - 1;
+            
+            // isolated pawns
+            if(pawns_on_file[WHITE][file] && !pawns_on_file[WHITE][file - 1] && !pawns_on_file[WHITE][file + 1]) isolated_pawns += pawns_on_file[WHITE][file];
+            if(pawns_on_file[BLACK][file] && !pawns_on_file[BLACK][file - 1] && !pawns_on_file[BLACK][file + 1]) isolated_pawns -= pawns_on_file[BLACK][file];
+        }
+        
+        // evaluate pawn structures
+        evaluation -= 50 * (doubled_pawns + isolated_pawns);
+
+        // evaluate mobility
+        evaluation += 10 * (getMoves(WHITE).size() - getMoves(BLACK).size());
 
         return evaluation;
     }
 
-    // evaluate a position to depth `depth` using a minimax approach
+    // evaluate a position using minimax to depth `depth`
     int evaluatePosition(PieceColor color, unsigned int depth) {
         // evaluate heuristic node
         if(depth == 0 || result != GameResult::IN_PROGRESS) return evaluate();
@@ -827,7 +859,7 @@ public:
             case WHITE: // maximizing player
             evaluation = INT_MIN;
             for(Move& move : getAlgebraicMoves(color)) {
-                int moveEvaluation = evaluateMove(move, depth - 1); // evaluation of move
+                int moveEvaluation = evaluateMove(move, depth - 1);
                 evaluation = std::max(evaluation, moveEvaluation);
             }
             break;
@@ -848,9 +880,9 @@ public:
         // do move
         this->move(move.piece->color, move);
 
-        // evaluate position
-        move.evaluation = evaluatePosition((PieceColor) ((move.piece->color + 1) % 2), depth);
-        if(IS_MATE(move.evaluation) && EVAL_COLOR(move.evaluation) == move.piece->color) move.piece->color ? move.evaluation++ : move.evaluation--;
+        // evaluate resulting position
+        move.evaluation = evaluatePosition(OPPOSITE(move.piece->color), depth);
+        if(IS_MATE(move.evaluation) && EVAL_COLOR(move.evaluation) == move.piece->color) move.piece->color ? move.evaluation++ : move.evaluation--; // if results in checkmate, increment mate counter
 
         // undo move
         this->unmove(move);
@@ -866,7 +898,7 @@ public:
         int bestEvaluation = color ? INT_MAX : INT_MIN;
         for(Move& move : getAlgebraicMoves(color)) {
             int evaluation = this->evaluateMove(move, depth - 1);
-            if(color ? evaluation < bestEvaluation : evaluation > bestEvaluation) {
+            if(BETTER(color, evaluation, bestEvaluation)) {
                 bestMoves.clear();
                 bestMoves.push_back(move);
                 bestEvaluation = evaluation;
@@ -888,16 +920,10 @@ public:
             if (move.piece->type != PAWN || move.captureType != CaptureType::NONE) {
                 std::list<Move> candidateMoves;
                 for (Move& candidate : getMoves(move.piece->color))
-                    if (candidate.to == move.to) {
-                        // if (candidate.from == move.from) {
-                            // update target reference if move is a capture
-                            // if (move.captureType != CaptureType::NONE) move.capture = candidate.capture;
-                        // } else
-                        if(move.from != candidate.from && move.piece->type == candidate.piece->type) candidateMoves.push_back(candidate);
-                    }
+                    if (move.to == candidate.to && move.from != candidate.from && move.piece->type == candidate.piece->type) candidateMoves.push_back(candidate);
 
                 bool rank = false; // whether or not there is rank ambiguity
-                bool file = move.piece->type == PAWN; // whether or not file ambiguity
+                bool file = move.piece->type == PAWN; // whether or not there is file ambiguity
                 for (Move& candidate : candidateMoves) {
                     if (candidate.from.rank == move.from.rank) file = true;
                     if (candidate.from.file == move.from.file) rank = true;
@@ -1026,30 +1052,24 @@ public:
     }
 
     // displays a list of moves played this game
-    void displayMoves(std::stack<Move> moves) const {
-        std::list<Move> moveList;
-
-        // convert move stack to a list
-        while (!moves.empty()) {
-            moveList.push_front(moves.top());
-            moves.pop();
-        }
-
+    void displayMoves() const {
         int n = 1;
 
-        if(!moveList.empty() && moveList.front().piece->color == PieceColor::BLACK) {
-            std::cout << "1... " << moveList.front().algebraic << " ";
-            moveList.pop_front();
+        std::list<Move>::const_iterator begin = moves.begin();
+        if(!moves.empty() && moves.front().piece->color == PieceColor::BLACK) {
+            std::cout << "1... " << moves.front().algebraic << " ";
+            begin++;
             n = 3;
         }
 
-        for (const Move& move : moveList) {
+        for (std::list<Move>::const_iterator move = begin; move != moves.end(); move++) {
             bool color = n % 2;
             if (color) std::cout << n / 2 + 1 << ". ";
-            std::cout << move.algebraic << " ";
+            std::cout << (*move).algebraic << " ";
             n++;
         }
-        std::cout << "\n";
+
+        std::cout << std::endl;
     }
 
     // display board (debug: blue = passant candidate, red = castling rights)
@@ -1069,10 +1089,10 @@ public:
                 std::string tile_color = bg[colors[rank][file]];
                 std::string piece_color = square ? fg[square->color] : "";
                 const char * piece = square ? PIECES[square->color][square->type] : " ";
-                if(!moves.empty() && moves.top().from == coord) tile_color = "\x1b[46m";
-                if(!moves.empty() && moves.top().to == coord) tile_color = "\x1b[106m";
+                if(!moves.empty() && moves.back().from == coord) tile_color = "\x1b[46m";
+                if(!moves.empty() && moves.back().to == coord) tile_color = "\x1b[106m";
                 if(debug) {
-                    if ((rank == 1 || rank == 8) && (file == A || file == H) && state.canCastle[rank / 8][file / 7]) tile_color = "\x1b[41m";
+                    if ((rank == 1 || rank == 8) && (file == A || file == H) && state.canCastle[rank == 8][file == H]) tile_color = "\x1b[41m";
                     if (square && state.passant == square) tile_color = "\x1b[44m";
                 }
                 std::cout << tile_color << " " << piece_color << piece << " \x1b[0m";
@@ -1082,9 +1102,9 @@ public:
         std::cout << "   a  b  c  d  e  f  g  h\n\n";
         
         // display moves
-        displayMoves(moves);
+        displayMoves();
 
         // display check message if in check
-        if (result == GameResult::IN_PROGRESS && inCheck((PieceColor) ((toPlay + 1) % 2))) std::cout << "Check!\n";
+        if (result == GameResult::IN_PROGRESS && inCheck(OPPOSITE(toPlay))) std::cout << "Check!\n";
     }
 };

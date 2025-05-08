@@ -59,7 +59,7 @@ public:
                     for(Move& move : moves) {
                         std::cout << move.algebraic << " (";
                         if(IS_MATE(move.evaluation)) std::cout << (move.evaluation > 0 ? "+" : "-") << "M" << MATE(move.evaluation);
-                        else std::cout << (move.evaluation > 0 ? "+" : "") << move.evaluation;
+                        else std::cout << (move.evaluation > 0 ? "+" : "") << (move.evaluation / 100.0f);
                         std::cout << ")\n";
                     }
                 } else for(Move& move : moves) std::cout << move.algebraic << "\n";
