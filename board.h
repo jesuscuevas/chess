@@ -38,11 +38,11 @@
 /* Checkmate evaluation system:
     INT_MAX = Mate in 0 (for white)
     INT_MAX - 1 = Mate in 1 (for white)
-    (...)
-
-    INT_MIN = Mate in 0 (for black)
+    INT_MAX - 2 = Mate in 2 (for white)
+    ...
+    INT_MIN + 2 = Mate in 2 (for black)
     INT_MIN + 1 = Mate in 1 (for black)
-    (...)
+    INT_MIN = Mate in 0 (for black)
 */
 
 // list of ways each piece can move
@@ -73,7 +73,7 @@ const CoordOffset DELTA_FILE = {1, 0};
 
 
 class Board {
-    public:
+public:
     GameResult result = GameResult::IN_PROGRESS;
     PieceColor toPlay = PieceColor::WHITE;
     int moveNumber = 1; // move number (currently unused)
@@ -110,13 +110,14 @@ private:
         bool hasNext() const {
             return (i < 8);
         }
-
+        
         void reset() {
             _next = start;
             i = 0;
         }
     };
-
+    
+public:
     Square& operator[](Coord& coord) {
         return board[coord.rank][coord.file];
     }
@@ -150,7 +151,6 @@ private:
         return (1 <= coord.rank) && (coord.rank <= 8) && (File::A <= coord.file) && (coord.file <= File::H);
     };
 
-public:
     Board() {
         // initialize board state
         GameState state;
@@ -679,8 +679,9 @@ public:
                     // check for en passant
                     if(!target) {
                         Square& passantTarget = board[rank][filePrime];
-                        if (!passantTarget || !state.passant || (state.passant != passantTarget)) return false;
+                        if (!passantTarget || passantTarget->color == color || !state.passant || (state.passant != passantTarget)) return false;
                         move.captureType = CaptureType::EN_PASSANT;
+                        move.capture = passantTarget;
                     }
                 }
                 break;
@@ -700,8 +701,9 @@ public:
                     // check for en passant
                     if (!target) {
                         Square& passantTarget = board[rank][filePrime];
-                        if (!passantTarget || !state.passant || (state.passant != passantTarget)) return false;
+                        if (!passantTarget || passantTarget->color == color || !state.passant || (state.passant != passantTarget)) return false;
                         move.captureType = CaptureType::EN_PASSANT;
+                        move.capture = passantTarget;
                     }
                 }
                 break;
@@ -785,9 +787,9 @@ public:
             }
         }
 
-        // backtrack
+        // undo move
         this->unmove(move);
- 
+
         return true;
     }
 
@@ -815,8 +817,8 @@ public:
 
         // material evaluation
         for(PieceType type : PIECE_TYPES) {
-            if(!remaining[WHITE].contains(type)) evaluation += remaining[WHITE].at(type).size() * PIECE_VALUES[type];
-            if(!remaining[BLACK].contains(type)) evaluation -= remaining[BLACK].at(type).size() * PIECE_VALUES[type];
+            if(remaining[WHITE].contains(type)) evaluation += remaining[WHITE].at(type).size() * PIECE_VALUES[type];
+            if(remaining[BLACK].contains(type)) evaluation -= remaining[BLACK].at(type).size() * PIECE_VALUES[type];
         }
 
         // positional evaluation
