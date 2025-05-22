@@ -21,7 +21,7 @@ public:
     CPUPlayer(PieceColor color, unsigned int depth) : Player(color, depth) {}
 
     void move(Board& board, bool debug = false) {
-        Move move = board.evaluate(color, depth);
+        Move move = board.bestMove(color, depth);
 
         board.tryMove(color, move);
     }

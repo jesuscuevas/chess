@@ -134,3 +134,29 @@ const PieceType PIECE_TYPES[6] = {
     PieceType::QUEEN,
     PieceType::KING
 };
+
+// represents a linear range of coordinate offsets (used for bishops, rooks, and queens)
+class Range {
+private:
+    CoordOffset start, step, _next;
+    int i = 0;
+
+public:
+    Range(CoordOffset start, CoordOffset step) : start(start), _next(start), step(step) {}
+
+    CoordOffset next() {
+        CoordOffset next = _next;
+        _next = _next + step;
+        i++;
+        return next;
+    }
+
+    bool hasNext() const {
+        return (i < 8);
+    }
+    
+    void reset() {
+        _next = start;
+        i = 0;
+    }
+};

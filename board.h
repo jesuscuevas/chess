@@ -45,8 +45,8 @@
     INT_MIN = Mate in 0 (for black)
 */
 
-// list of ways each piece can move
-std::map<PieceType, std::list<CoordOffset>> PIECE_OFFSETS[2] = {
+// list of ways each piece can move (todo: a better system that's less redundant)
+const std::map<PieceType, std::list<CoordOffset>> PIECE_OFFSETS[2] = {
     {
         { PieceType::PAWN, {{0, 1}, {0, 2}, {1, 1}, {-1, 1}}},
         { PieceType::KNIGHT, {{1, 2}, {1, -2}, {2, 1}, {2, -1}, {-1, 2}, {-1, -2}, {-2, 1}, {-2, -1}}},
@@ -64,13 +64,12 @@ const char PIECES[2][7][4] = {
     {"\u265f", "\u265e", "\u265d", "\u265c", "\u265b", "\u265a"}
 };
 
-// piece values (centipawns)
+// piece values (measured in centipawns)
 const int PIECE_VALUES[6] = { 100, 300, 300, 500, 900, 99999 };
 
 // unit vectors for rank and file offsets
 const CoordOffset DELTA_RANK = {0, 1};
 const CoordOffset DELTA_FILE = {1, 0};
-
 
 class Board {
 public:
@@ -85,38 +84,12 @@ private:
     Square board[9][9] = {NULL}; // board representation
     std::stack<GameState> states; // stack of board state information
     std::list<Move> moves; // list of moves made this game
-    std::map<PieceType, std::list<Piece>> pieces[2]; // color-based list of pieces (captured or not)
+    std::list<Piece> pieces[2]; // list of all pieces
     std::map<PieceType, std::list<Piece *>> remaining[2]; // remaining pieces (pieces still on the board)
     std::map<PieceType, std::list<Piece *>> captured[2]; // captured pieces (pieces no longer on the board)
     std::string fg[2] = {"\x1b[38:5:255m", "\x1b[38:5:232m"}; // foreground terminal color
     std::string bg[2] = {"\x1b[48:5:248m", "\x1b[48:5:240m"}; // background terminal color
 
-    // represents a linear range of coordinate offsets (used for bishops, rooks, and queens)
-    class Range {
-    private:
-        CoordOffset start, step, _next;
-        int i = 0;
-
-    public:
-        Range(CoordOffset start, CoordOffset step) : start(start), _next(start), step(step) {}
-
-        CoordOffset next() {
-            CoordOffset next = _next;
-            _next = _next + step;
-            i++;
-            return next;
-        }
-
-        bool hasNext() const {
-            return (i < 8);
-        }
-        
-        void reset() {
-            _next = start;
-            i = 0;
-        }
-    };
-    
 public:
     Square& operator[](Coord& coord) {
         return board[coord.rank][coord.file];
@@ -151,6 +124,7 @@ public:
         return (1 <= coord.rank) && (coord.rank <= 8) && (File::A <= coord.file) && (coord.file <= File::H);
     };
 
+    // classical starting position (default)
     Board() {
         // initialize board state
         GameState state;
@@ -169,56 +143,55 @@ public:
             // place pawns
             for (File file = File::A; file <= File::H; file++) {
                 Piece pawn = {color, PieceType::PAWN, {file, rank}};
-                pieces[color][PieceType::PAWN].push_back(pawn);
-                board[rank][file] = &pieces[color][PieceType::PAWN].back();
+                pieces[color].push_back(pawn);
+                board[rank][file] = &pieces[color].back();
             }
 
             /* place back rank */
             rank = RANK(color, 1);
 
             // place rooks
-            Piece queensRook = { color, PieceType::ROOK, {File::A, rank}};
-            pieces[color][PieceType::ROOK].push_back(queensRook);
-            board[rank][A] = &pieces[color][PieceType::ROOK].back();
+            Piece queensRook = { color, PieceType::ROOK, {File::A, rank} };
+            pieces[color].push_back(queensRook);
+            board[rank][A] = &pieces[color].back();
 
-            Piece kingsRook = { color, PieceType::ROOK, {File::H, rank}};
-            pieces[color][PieceType::ROOK].push_back(kingsRook);
-            board[rank][H] = &pieces[color][PieceType::ROOK].back();
+            Piece kingsRook = { color, PieceType::ROOK, {File::H, rank} };
+            pieces[color].push_back(kingsRook);
+            board[rank][H] = &pieces[color].back();
 
             // place knights
-            Piece queensKnight = { color, PieceType::KNIGHT, {File::B, rank}};
-            pieces[color][PieceType::KNIGHT].push_back(queensKnight);
-            board[rank][B] = &pieces[color][PieceType::KNIGHT].back();
+            Piece queensKnight = { color, PieceType::KNIGHT, {File::B, rank} };
+            pieces[color].push_back(queensKnight);
+            board[rank][B] = &pieces[color].back();
 
-            Piece kingsKnight  = { color, PieceType::KNIGHT, {File::G, rank}};
-            pieces[color][PieceType::KNIGHT].push_back(kingsKnight);
-            board[rank][G] = &pieces[color][PieceType::KNIGHT].back();
+            Piece kingsKnight  = { color, PieceType::KNIGHT, {File::G, rank} };
+            pieces[color].push_back(kingsKnight);
+            board[rank][G] = &pieces[color].back();
 
             // place bishops
-            Piece queensBishop = { color, PieceType::BISHOP, {File::C, rank}};
-            pieces[color][PieceType::BISHOP].push_back(queensBishop);
-            board[rank][C] = &pieces[color][PieceType::BISHOP].back();
+            Piece queensBishop = { color, PieceType::BISHOP, {File::C, rank} };
+            pieces[color].push_back(queensBishop);
+            board[rank][C] = &pieces[color].back();
 
-            Piece kingsBishop  = { color, PieceType::BISHOP, {File::F, rank}};
-            pieces[color][PieceType::BISHOP].push_back(kingsBishop);
-            board[rank][F] = &pieces[color][PieceType::BISHOP].back();
+            Piece kingsBishop  = { color, PieceType::BISHOP, {File::F, rank} };
+            pieces[color].push_back(kingsBishop);
+            board[rank][F] = &pieces[color].back();
 
             // place queen
-            Piece queen = { color, PieceType::QUEEN, {File::D, rank}};
-            pieces[color][PieceType::QUEEN].push_back(queen);
-            board[rank][D] = &pieces[color][PieceType::QUEEN].back();
+            Piece queen = { color, PieceType::QUEEN, {File::D, rank} };
+            pieces[color].push_back(queen);
+            board[rank][D] = &pieces[color].back();
 
             // place king
-            Piece king = { color, PieceType::KING, {File::E, rank}};
-            pieces[color][PieceType::KING].push_back(king);
-            board[rank][E] = &pieces[color][PieceType::KING].back();
+            Piece king = { color, PieceType::KING, {File::E, rank} };
+            pieces[color].push_back(king);
+            board[rank][E] = &pieces[color].back();
         }
 
         // load list of references to remaining pieces (all pieces)
         for (uint8_t color = PieceColor::WHITE; color <= PieceColor::BLACK; color++)
-            for (uint8_t type = PieceType::PAWN; type <= PieceType::KING; type++)
-                for (Piece& piece : pieces[color][(PieceType)type])
-                    remaining[color][(PieceType)type].push_back(&piece);
+            for (Piece& piece : pieces[color])
+                remaining[color][piece.type].push_back(&piece);
 
         // cache square colors for faster display() calls
         for (Rank rank = 1; rank <= 8; rank++)
@@ -256,12 +229,12 @@ public:
                 else {
                     PieceColor color = (PieceColor) (piece / 6);
                     PieceType type = (PieceType) (piece % 6);
-                    pieces[color][type].push_back((Piece) {
+                    pieces[color].push_back((Piece) {
                         .color = color,
                         .type = type,
                         .location = {file, rank}
                     });
-                    board[rank][file] = &pieces[color][type].back();
+                    board[rank][file] = &pieces[color].back();
                 }
                 file++;
             }
@@ -313,9 +286,8 @@ public:
 
         // load list of references to remaining pieces (all pieces)
         for (uint8_t color = PieceColor::WHITE; color <= PieceColor::BLACK; color++)
-        for (uint8_t type = PieceType::PAWN; type <= PieceType::KING; type++)
-            for (Piece& piece : pieces[color][(PieceType)type])
-                remaining[color][(PieceType)type].push_back(&piece);
+            for (Piece& piece : pieces[color])
+                remaining[color][piece.type].push_back(&piece);
 
         // cache square colors for faster display() calls
         for (Rank rank = 1; rank <= 8; rank++)
@@ -326,7 +298,7 @@ public:
         states.push(state);
     }
 
-    // returns a list of candidate moves for color `color` (not necessarily legal)
+    // returns a superset of all legal moves for color `color`
     std::list<Move> getCandidateMoves(PieceColor color) {
         std::list<Move> moves;
 
@@ -335,7 +307,7 @@ public:
         // non-ranged pieces
         for (PieceType pieceType : {PieceType::PAWN, PieceType::KNIGHT, PieceType::KING}) {
             for (Piece* piece : remaining[color][pieceType]) {
-                for (const CoordOffset& offset : PIECE_OFFSETS[color][pieceType]) {
+                for (const CoordOffset& offset : PIECE_OFFSETS[color].at(pieceType)) {
                     Move move;
                     move.from = piece->location;
                     move.to = piece->location + offset;
@@ -406,7 +378,7 @@ public:
         Board& board = (Board&)*this;
 
         // king
-        for(const CoordOffset offset : PIECE_OFFSETS[color][PieceType::KING]) {
+        for(const CoordOffset offset : PIECE_OFFSETS[color].at(PieceType::KING)) {
             if(abs(offset.dfile) > 1) continue; // king can't castle into a capture
             Coord coord = location + offset;
             if (!onBoard(coord) || !board[coord]) continue;
@@ -430,7 +402,7 @@ public:
         }
 
         // knights
-        for (const CoordOffset offset : PIECE_OFFSETS[color][PieceType::KNIGHT]) {
+        for (const CoordOffset offset : PIECE_OFFSETS[color].at(PieceType::KNIGHT)) {
             Coord coord = location + offset;
             if (!onBoard(coord) || !board[coord]) continue;
 
@@ -469,10 +441,10 @@ public:
     // execute a move (assumes valid input)
     void move(PieceColor color, Move& move) {
         GameState state = states.top();
-        Rank rank = move.from.rank;
-        File file = move.from.file;
-        Rank rankPrime = move.to.rank;
-        File filePrime = move.to.file;
+        const Rank rank = move.from.rank;
+        const File file = move.from.file;
+        const Rank rankPrime = move.to.rank;
+        const File filePrime = move.to.file;
         Square& source = board[rank][file];
         Square& target = board[rankPrime][filePrime];
 
@@ -520,14 +492,9 @@ public:
         // handle special pawn moves (pawn promotion and moving foward two squares)
         if (source->type == PieceType::PAWN) {
             if (move.moveType == MoveType::PROMOTION) {
-                Piece promotedPiece = *source; // make a copy of the moving piece
-                promotedPiece.type = move.promoteTo; // promote the piece copy
-                remaining[color][PAWN].remove(source); // remove original piece from remaining list
-                pieces[color][PAWN].remove(*source); // remove original piece from piece list
-                pieces[color][promotedPiece.type].push_back(promotedPiece); // add promoted piece to piece list
-                remaining[color][promotedPiece.type].push_back(&pieces[color][promotedPiece.type].back()); // add promoted piece to remaining list
-                source = remaining[color][promotedPiece.type].back(); // replace original piece with promoted piece on the board
-                move.piece = source; // update move struct to point to the promoted piece
+                source->type = move.promoteTo; // promote the piece copy
+                remaining[color][PAWN].remove(source); // remove piece from remaining pawns list
+                remaining[color][source->type].push_back(source); // add promoted piece to corresponding remaining list
             } else if (color ? (rank == rankPrime + 2) : (rank + 2 == rankPrime))
                 state.passant = source;
         }
@@ -535,7 +502,7 @@ public:
         // execute capture(s)
         if (move.captureType == CaptureType::EN_PASSANT) {
             Square& passantSquare = board[rank][filePrime];
-            Piece * piece = passantSquare;
+            Piece * piece = (Piece *) passantSquare;
             remaining[piece->color][piece->type].remove(piece); // remove piece from piece list
             captured[piece->color][piece->type].push_back(piece); // add piece copy to list of captured pieces
             passantSquare = (Piece*) NULL; // clear passant square
@@ -561,38 +528,34 @@ public:
 
     // undo a move (temporarily assumes that `move` is on the top of the `moves` stack)
     void unmove(Move& move) {
-        Piece * sourcePiece = move.piece;
-        PieceColor color = OPPOSITE(sourcePiece->color);
+        Piece * piece = move.piece;
+        PieceColor color = OPPOSITE(piece->color);
 
         // locate captured piece (if there is one)
-        Piece * targetPiece = (move.captureType == CaptureType::EN_PASSANT) ? captured[color][PAWN].back() : move.capture;
+        Piece * capturedPiece = (move.captureType == CaptureType::EN_PASSANT) ? captured[color][PAWN].back() : move.capture;
 
         // undo game-ending changes
         result = GameResult::IN_PROGRESS;
 
         // undo piece capture(s)
         if (move.captureType != CaptureType::NONE) {
-            const PieceType type = targetPiece->type;
-            captured[color][type].remove(targetPiece);
-            remaining[color][type].push_back(targetPiece);
-            (*this)[targetPiece->location] = targetPiece;
-        } 
+            const PieceType type = capturedPiece->type;
+            captured[color][type].remove(capturedPiece);
+            remaining[color][type].push_back(capturedPiece);
+            (*this)[capturedPiece->location] = capturedPiece;
+        }
 
         switch(move.moveType) {
         // undo a pawn promotion
         case MoveType::PROMOTION: {
-            // make a copy of the promoted piece
-            Piece pawn = *sourcePiece;
-            pawn.type = PieceType::PAWN;
+            // remove the promoted piece from remaining list
+            remaining[piece->color][piece->type].remove(piece);
 
-            // remove the promoted piece from piece lists
-            remaining[sourcePiece->color][sourcePiece->type].remove(sourcePiece);
-            pieces[sourcePiece->color][sourcePiece->type].remove(*sourcePiece);
+            // undo promotion
+            piece->type = PieceType::PAWN;
             
-            // reinsert the pawn into piece lists
-            pieces[pawn.color][pawn.type].push_back(pawn);
-            remaining[pawn.color][pawn.type].push_back(&pieces[pawn.color][pawn.type].back());
-            move.piece = remaining[pawn.color][pawn.type].back();
+            // reinsert the pawn into the remaining pawns lists
+            remaining[piece->color][PieceType::PAWN].push_back(piece);
             break;
         }
         
@@ -610,8 +573,8 @@ public:
         }
 
         // move piece back to its original square
-        (*this)[move.from] = move.piece;
-        move.piece->location = move.from;
+        (*this)[move.from] = piece;
+        piece->location = move.from;
         if(move.captureType != CaptureType::NORMAL) (*this)[move.to] = NULL;
 
         // remove the move from move list
@@ -619,36 +582,37 @@ public:
         states.pop();
     }
 
-    // fills move struct and performs preliminary move validation (doesn't evaluate whether move would lead to checkmate to avoid infinite recursion)
-    bool isValid(PieceColor color, Move& move) {
+    // fills move struct and returns whether move is pseudo-legal
+    bool pseudoLegal(PieceColor color, Move& move) {
         GameState& state = states.top();
-        Rank rank = move.from.rank;
-        File file = move.from.file;
-        Rank rankPrime = move.to.rank;
-        File filePrime = move.to.file;
+        const Rank rank = move.from.rank;
+        const File file = move.from.file;
+        const Rank rankPrime = move.to.rank;
+        const File filePrime = move.to.file;
         Square& source = board[rank][file];
         Square& target = board[rankPrime][filePrime];
+        Piece * piece = source;
 
         // fill move struct
-        move.piece = source;
+        move.piece = piece;
         move.capture = target;
 
-        // whether pawn has moved 2 spaces
+        // whether the moving piece is a pawn moving two squares
         bool moveTwo = false;
 
         // in bounds
         if (!onBoard(move.from) || !onBoard(move.to)) return false;
 
         // ensure a piece is on the selected square
-        if (!source) return false;
+        if (!piece) return false;
 
         // ensure player owns piece
-        if (source->color != color) return false;
+        if (piece->color != color) return false;
 
         // if target square has a piece on it, then ensure that it's the oponnent's piece and that it's not a king
         // (note: checking for a king shouldn't be strictly necessary but it's a temporary solution to a bug that allowed king captures)
         if (target) {
-            if(source->color == target->color || target->type == PieceType::KING) return false;
+            if(color == target->color || target->type == PieceType::KING) return false;
             move.captureType = CaptureType::NORMAL;
         }
 
@@ -658,10 +622,10 @@ public:
         int8_t df = dfile ? dfile / abs(dfile) : 0; // normalized change in file
         
         // piece-type-dependent rules
-        switch (source->type) {
+        switch (piece->type) {
         case PieceType::PAWN:
             if (abs(dfile) > 1) return false; // moving by > 1 file
-            switch (source->color) {
+            switch (color) {
             case PieceColor::WHITE:
                 if (drank <= 0 || drank > 2) return false;
 
@@ -738,7 +702,7 @@ public:
             if (abs(drank) > 1 || abs(dfile) > 2) return false;
             if (abs(dfile) == 2) { // castling
                 Side side = (Side) ((filePrime - 1) / 4);
-                if (drank || rank != RANK(color, 1) || file != E || !state.canCastle[color][side] || inCheck(color)) { return false; }
+                if (drank || rank != RANK(color, 1) || file != File::E || !state.canCastle[color][side] || inCheck(color)) { return false; }
                 switch (filePrime) {
                 case File::C: // queenside
                     if (board[rank][File::B]) return false;
@@ -757,6 +721,11 @@ public:
             break;
         }
 
+        return true;
+    }
+
+    // returns whether a pseudolegal move `move` is legal
+    bool legal(PieceColor color, Move& move) {
         // do move
         this->move(color, move);
 
@@ -770,9 +739,9 @@ public:
         return !check;
     }
 
-    // checks whether a move is legal (fills `move` with relevant info if so)
+    // checks whether a move is legal and whether or not it is a game-ending move
     bool validate(PieceColor color, Move& move) {
-        if (!isValid(color, move)) return false;
+        if (!pseudoLegal(color, move) || !legal(color, move)) return false;
 
         // simulate move
         this->move(color, move);
@@ -781,7 +750,7 @@ public:
         move.mate = true;
         PieceColor enemyColor = OPPOSITE(color);
         for (Move& candidate : getCandidateMoves(enemyColor)) {
-            if (isValid(enemyColor, candidate)) {
+            if (pseudoLegal(enemyColor, candidate) && legal(enemyColor, candidate)) {
                 move.mate = false;
                 break;
             }
@@ -805,7 +774,7 @@ public:
 
     // evaluate terminal node
     int evaluate() {
-        
+        // evaluate end of game conditions
         switch(result) {
             case GameResult::DRAW: return 0;
             case GameResult::WHITE_WINS: return INT_MAX; // +M0
@@ -822,7 +791,7 @@ public:
         }
 
         // positional evaluation
-        int pawns_on_file[2][10] = {0}; // number of pawns on each file
+        int pawns_on_file[2][10] = {0}; // number of pawns on each file (padded on both sides)
         int doubled_pawns = 0; // difference in # of doubled pawns
         int isolated_pawns = 0; // difference in # of isolated pawns
 
@@ -883,8 +852,9 @@ public:
         this->move(move.piece->color, move);
 
         // evaluate resulting position
-        move.evaluation = evaluatePosition(OPPOSITE(move.piece->color), depth);
-        if(IS_MATE(move.evaluation) && EVAL_COLOR(move.evaluation) == move.piece->color) move.piece->color ? move.evaluation++ : move.evaluation--; // if results in checkmate, increment mate counter
+        const PieceColor color = move.piece->color;
+        move.evaluation = evaluatePosition(OPPOSITE(color), depth);
+        if(IS_MATE(move.evaluation) && EVAL_COLOR(move.evaluation) == color) color ? move.evaluation++ : move.evaluation--; // if results in checkmate, increment mate counter
 
         // undo move
         this->unmove(move);
@@ -893,8 +863,8 @@ public:
         return move.evaluation;
     }
 
-    // returns the best move for `color` by searching to depth `depth`
-    Move evaluate(PieceColor color, unsigned int depth) {
+    // returns a list of the 'best' moves in the position for `color` by performing a search to depth `depth`
+    std::vector<Move> bestMoves(PieceColor color, unsigned int depth) {
         std::vector<Move> bestMoves;
 
         int bestEvaluation = color ? INT_MAX : INT_MIN;
@@ -907,6 +877,12 @@ public:
             } else if(evaluation == bestEvaluation) bestMoves.push_back(move);
         }
 
+        return bestMoves;
+    }
+
+    // returns a randomly selected move from the list of best moves
+    Move bestMove(PieceColor color, unsigned int depth) {
+        const std::vector<Move> bestMoves = this->bestMoves(color, depth);
         return bestMoves.at(std::rand() % bestMoves.size());
     }
 
@@ -1031,7 +1007,7 @@ public:
             if (move.to == candidate.to && candidate.piece->type == pieceType) candidates.push_back(candidate);
         }
 
-        // copy move data
+        // make a deep copy of the move
         if (candidates.size() == 1) {
             move = candidates.front();
             move.algebraic = (char *) malloc(moveStr.length() + 1);
