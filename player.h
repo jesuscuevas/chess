@@ -55,7 +55,7 @@ public:
             std::cin >> move;
 
             if(debug && move == "evaluate")
-                std::cout << "Evaluation: " << evaluationString(board.evaluatePosition(board.toPlay, depth)) << std::endl;
+                std::cout << "Evaluation: " << evaluationString(board.evaluatePosition(board.toPlay, INT_MIN, INT_MAX, depth)) << std::endl;
             if (move == "moves") {
                 // list all legal moves in the current position
                 // if debug mode is enabled, evaluations will also be displayed
@@ -65,9 +65,9 @@ public:
 
                 // in debug mode, add move evaluations and sort moves by numerical evaluation
                 if(debug) {
-                    for (Move& move : moves) board.evaluateMove(move, depth);
+                    for (Move& move : moves) board.evaluateMove(move, INT_MIN, INT_MAX, depth);
                     moves.sort([board](const Move& a, const Move& b) {
-                        return board.toPlay ? a.evaluation < b.evaluation : a.evaluation > b.evaluation;
+                        return BETTER(board.toPlay, a.evaluation, b.evaluation);
                     });
 
                     for(Move& move : moves) std::cout << move.algebraic << " (" << evaluationString(move.evaluation) << ")\n";

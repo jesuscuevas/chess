@@ -820,7 +820,7 @@ public:
     }
 
     // evaluate a position using minimax to depth `depth`
-    int evaluatePosition(PieceColor color, unsigned int depth) {
+    int evaluatePosition(PieceColor color, int alpha, int beta, unsigned int depth) {
         // evaluate heuristic node
         if(depth == 0 || result != GameResult::IN_PROGRESS) return evaluate();
 
@@ -830,15 +830,17 @@ public:
             case WHITE: // maximizing player
             evaluation = INT_MIN;
             for(Move& move : getAlgebraicMoves(color)) {
-                int moveEvaluation = evaluateMove(move, depth - 1);
-                evaluation = std::max(evaluation, moveEvaluation);
+                evaluation = std::max(evaluation, evaluateMove(move, alpha, beta, depth - 1));
+                if(evaluation >= beta) break;
+                alpha = std::max(alpha, evaluation);
             }
             break;
             case BLACK: // minimizing player
             evaluation = INT_MAX;
             for(Move& move : getAlgebraicMoves(color)) {
-                int moveEvaluation = evaluateMove(move, depth - 1);
-                evaluation = std::min(evaluation, moveEvaluation);
+                evaluation = std::min(evaluation, evaluateMove(move, alpha, beta, depth - 1));
+                if(evaluation <= alpha) break;
+                beta = std::min(beta, evaluation);
             }
             break;
         }
@@ -847,13 +849,13 @@ public:
     }
     
     // evaluate a move using a minimax approach
-    int evaluateMove(Move& move, unsigned int depth) {
+    int evaluateMove(Move& move, int alpha, int beta, unsigned int depth) {
         // do move
         this->move(move.piece->color, move);
 
         // evaluate resulting position
         const PieceColor color = move.piece->color;
-        move.evaluation = evaluatePosition(OPPOSITE(color), depth);
+        move.evaluation = evaluatePosition(OPPOSITE(color), alpha, beta, depth);
         if(IS_MATE(move.evaluation) && EVAL_COLOR(move.evaluation) == color) color ? move.evaluation++ : move.evaluation--; // if results in checkmate, increment mate counter
 
         // undo move
@@ -869,7 +871,7 @@ public:
 
         int bestEvaluation = color ? INT_MAX : INT_MIN;
         for(Move& move : getAlgebraicMoves(color)) {
-            int evaluation = this->evaluateMove(move, depth - 1);
+            int evaluation = evaluateMove(move, INT_MIN, INT_MAX, depth - 1);
             if(BETTER(color, evaluation, bestEvaluation)) {
                 bestMoves.clear();
                 bestMoves.push_back(move);
