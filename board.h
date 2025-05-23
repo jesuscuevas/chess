@@ -298,8 +298,8 @@ public:
         states.push(state);
     }
 
-    // returns a superset of all legal moves for color `color`
-    std::list<Move> getCandidateMoves(PieceColor color) {
+    // returns a list of all pseudolegal moves for color `color`
+    std::list<Move> getPseudoLegalMoves(PieceColor color) {
         std::list<Move> moves;
 
         Board& board = *this;
@@ -320,9 +320,9 @@ public:
                     if(piece->type == PieceType::PAWN && move.to.rank == RANK(color, 8)) {
                         for(uint8_t promoteTo = PieceType::KNIGHT; promoteTo <= PieceType::QUEEN; promoteTo++) {
                             move.promoteTo = (PieceType) promoteTo;
-                            moves.push_back(move);
+                            if(pseudoLegal(color, move)) moves.push_back(move);
                         }
-                    } else moves.push_back(move);
+                    } else if(pseudoLegal(color, move)) moves.push_back(move);
                 }
             }
         }
@@ -340,7 +340,7 @@ public:
                         move.piece = piece;
                         move.capture = board[move.to];
 
-                        moves.push_back(move);
+                        if(pseudoLegal(color, move)) moves.push_back(move);
                         if (board[move.to]) break;
                     }
                     range.reset();
@@ -352,16 +352,16 @@ public:
     }
 
     // returns a list of every legal move that `color` has in the current position
-    std::list<Move> getMoves(PieceColor color) {
+    std::list<Move> getLegalMoves(PieceColor color) {
         std::list<Move> moves;
-        for (Move& move : getCandidateMoves(color)) if (validate(color, move)) moves.push_back(move);
+        for (Move& move : getPseudoLegalMoves(color)) if (validate(color, move)) moves.push_back(move);
         return moves;
     }
 
     // returns a list of every legal move in the position with algebraic notation move descriptions
     // (theoretically slows down the evaluation but makes debugging easier)
     std::list<Move> getAlgebraicMoves(PieceColor color) {
-        std::list<Move> moves = getMoves(color);
+        std::list<Move> moves = getLegalMoves(color);
         for (Move& move : moves) {
             std::string algebraic = toAlgebraic(move);
             move.algebraic = (char *) malloc(algebraic.length() + 1);
@@ -749,8 +749,8 @@ public:
         // check for checkmate or stalemate (absence of legal responses to move)
         move.mate = true;
         PieceColor enemyColor = OPPOSITE(color);
-        for (Move& candidate : getCandidateMoves(enemyColor)) {
-            if (pseudoLegal(enemyColor, candidate) && legal(enemyColor, candidate)) {
+        for (Move& response : getPseudoLegalMoves(enemyColor)) {
+            if (legal(enemyColor, response)) {
                 move.mate = false;
                 break;
             }
@@ -814,7 +814,7 @@ public:
         evaluation -= 50 * (doubled_pawns + isolated_pawns);
 
         // evaluate mobility
-        evaluation += 10 * (getMoves(WHITE).size() - getMoves(BLACK).size());
+        evaluation += 10 * (getPseudoLegalMoves(WHITE).size() - getPseudoLegalMoves(BLACK).size());
 
         return evaluation;
     }
@@ -897,7 +897,7 @@ public:
             // explicitly state ranks and files iff necessary
             if (move.piece->type != PAWN || move.captureType != CaptureType::NONE) {
                 std::list<Move> candidateMoves;
-                for (Move& candidate : getMoves(move.piece->color))
+                for (Move& candidate : getLegalMoves(move.piece->color))
                     if (move.to == candidate.to && move.from != candidate.from && move.piece->type == candidate.piece->type) candidateMoves.push_back(candidate);
 
                 bool rank = false; // whether or not there is rank ambiguity
@@ -1000,7 +1000,7 @@ public:
 
         // check whether move is legal by searching for all legal moves (temporary solution)
         std::list<Move> candidates;
-        for (Move candidate : getMoves(color)) {
+        for (Move candidate : getLegalMoves(color)) {
             if (move.from.rank != (Rank) -1 && move.from.rank != candidate.from.rank) continue;
             if (move.from.file != (File) -1 && move.from.file != candidate.from.file) continue;
             if (move.promoteTo != candidate.promoteTo) continue;

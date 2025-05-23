@@ -8,14 +8,19 @@ int main(int argc, char * argv[]) {
     // default parameters
     unsigned int depth = DEFAULT_DEPTH;
     std::string fenString = "";
+    bool debug = false;
+
     Game game(DEFAULT_DEPTH);
 
     // parse command line arguments
     int opt;
-    while((opt = getopt(argc, argv, "df")) != -1) {
+    while((opt = getopt(argc, argv, "dDf")) != -1) {
         switch(opt) {
             case 'd':
                 depth = std::stoi(argv[optind]);
+                break;
+            case 'D':
+                debug = true;
                 break;
             case 'f':
             {
@@ -35,7 +40,10 @@ int main(int argc, char * argv[]) {
                 break;
             }
             default:
-                std::cerr << "Usage: chess [-d depth] [-f FEN file]\n";
+                std::cerr << "Usage: chess [options]\n";
+                std::cerr << "-d depth : engine recursion depth\n";
+                std::cerr << "-f file  : starts game from position in FEN file <file>\n";
+                std::cerr << "-D       : start in debug mode" << std::endl;
                 return EXIT_FAILURE;
         }
     }
@@ -45,7 +53,7 @@ int main(int argc, char * argv[]) {
     else game = Game(fenString, depth);
 
     // run game
-    game.run(true);
+    game.run(debug);
 
     return 0;
 }

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <iomanip>
 #include <random>
+#include <sstream>
 
 #include "board.h"
 
@@ -28,6 +30,16 @@ public:
 };
 
 class HumanPlayer : public Player {
+private:
+    static std::string evaluationString(int evaluation) {
+        if(IS_MATE(evaluation)) return std::string((evaluation > 0) ? "+M" : "-M") + std::to_string(MATE(evaluation));
+
+        std::stringstream stream;
+        if(evaluation > 0) stream << "+";
+        stream << std::fixed << std::setprecision(2) << evaluation / 100.0f;
+        return stream.str();
+    }
+
 public:
     HumanPlayer(PieceColor color) : Player(color) {}
     HumanPlayer(PieceColor color, unsigned int depth) : Player(color, depth) {}
@@ -42,6 +54,8 @@ public:
             std::cout << "Move (" << (color ? "Black" : "White") << "): ";
             std::cin >> move;
 
+            if(debug && move == "evaluate")
+                std::cout << "Evaluation: " << evaluationString(board.evaluatePosition(board.toPlay, depth)) << std::endl;
             if (move == "moves") {
                 // list all legal moves in the current position
                 // if debug mode is enabled, evaluations will also be displayed
@@ -49,19 +63,14 @@ public:
                 
                 std::cout << "Legal moves:\n";
 
-                // in debug mode add move evaluations
+                // in debug mode, add move evaluations and sort moves by numerical evaluation
                 if(debug) {
                     for (Move& move : moves) board.evaluateMove(move, depth);
                     moves.sort([board](const Move& a, const Move& b) {
                         return board.toPlay ? a.evaluation < b.evaluation : a.evaluation > b.evaluation;
                     });
 
-                    for(Move& move : moves) {
-                        std::cout << move.algebraic << " (";
-                        if(IS_MATE(move.evaluation)) std::cout << (move.evaluation > 0 ? "+" : "-") << "M" << MATE(move.evaluation);
-                        else std::cout << (move.evaluation > 0 ? "+" : "") << (move.evaluation / 100.0f);
-                        std::cout << ")\n";
-                    }
+                    for(Move& move : moves) std::cout << move.algebraic << " (" << evaluationString(move.evaluation) << ")\n";
                 } else for(Move& move : moves) std::cout << move.algebraic << "\n";
 
                 std::cout << std::endl;
