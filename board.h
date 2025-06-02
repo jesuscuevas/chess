@@ -32,9 +32,6 @@
 // returns whether evaluation `eval1` is better for `color`than `eval2`
 #define BETTER(color, eval1, eval2) (color ? (eval1 < eval2) : (eval1 > eval2))
 
-// returns the opposite color of `color`
-#define OPPOSITE(color) ((PieceColor) (color ^ 1))
-
 /* Checkmate evaluation system:
     INT_MAX = Mate in 0 (for white)
     INT_MAX - 1 = Mate in 1 (for white)
@@ -258,7 +255,7 @@ public:
         state.canCastle[1][0] = false;
         state.canCastle[1][1] = false;
         if(token != "-") for(char c : token) {
-            int i = std::string("KQkq").find(c);
+            int i = std::string("QKqk").find(c);
             state.canCastle[i / 2][i % 2] = true;
         }
 
@@ -435,7 +432,7 @@ public:
     bool inCheck(PieceColor color) const {
         const Piece * king = remaining[color].at(PieceType::KING).front();
 
-        return isAttacked(OPPOSITE(color), king->location);
+        return isAttacked(!color, king->location);
     }
 
     // execute a move (assumes valid input)
@@ -468,7 +465,7 @@ public:
                     int8_t dfile = filePrime - file;
                     int8_t df = dfile / abs(dfile);
                     Side side = (Side) ((filePrime - 1) / 4); // A - D => queenside, E - H => kingside
-                    Square& rookSource = board[rank][side ? H : A];
+                    Square& rookSource = board[rank][side ? File::H : File::A];
                     Square& rookTarget = board[rank][side ? File::F : File::D];
                     rookSource->location.file = side ? File::F : File::D;
                     rookTarget = rookSource;
@@ -529,7 +526,7 @@ public:
     // undo a move (temporarily assumes that `move` is on the top of the `moves` stack)
     void unmove(Move& move) {
         Piece * piece = move.piece;
-        PieceColor color = OPPOSITE(piece->color);
+        PieceColor color = !piece->color;
 
         // locate captured piece (if there is one)
         Piece * capturedPiece = (move.captureType == CaptureType::EN_PASSANT) ? captured[color][PAWN].back() : move.capture;
@@ -562,11 +559,13 @@ public:
         // if move is a castling move, then also move the rook back to its original square
         case MoveType::CASTLE:
             switch (move.to.file) {
-                case File::C:
+                case File::C: // O-O-O
+                board[move.from.rank][File::D]->location.file = File::A;
                 board[move.from.rank][File::A] = board[move.from.rank][File::D];
                 board[move.from.rank][File::D] = NULL;
                 break;
-                case File::G:
+                case File::G: // O-O
+                board[move.from.rank][File::F]->location.file = File::H;
                 board[move.from.rank][File::H] = board[move.from.rank][File::F];
                 board[move.from.rank][File::F] = NULL;
             }
@@ -707,11 +706,11 @@ public:
                 case File::C: // queenside
                     if (board[rank][File::B]) return false;
                     for (File f = File::C; f <= File::D; f++)
-                        if (board[rank][f] || isAttacked(OPPOSITE(color), { f, rank })) return false;
+                        if (board[rank][f] || isAttacked(!color, { f, rank })) return false;
                     break;
                 case File::G: // kingside
                     for (File f = File::F; f <= File::G; f++)
-                        if (board[rank][f] || isAttacked(OPPOSITE(color), { f, rank })) return false;
+                        if (board[rank][f] || isAttacked(!color, { f, rank })) return false;
                     break;
                 default:
                     return false;
@@ -731,7 +730,7 @@ public:
 
         // check for checks
         bool check = inCheck(color);
-        move.check = inCheck(OPPOSITE(color));
+        move.check = inCheck(!color);
 
         // undo move
         this->unmove(move);
@@ -748,7 +747,7 @@ public:
 
         // check for checkmate or stalemate (absence of legal responses to move)
         move.mate = true;
-        PieceColor enemyColor = OPPOSITE(color);
+        PieceColor enemyColor = !color;
         for (Move& response : getPseudoLegalMoves(enemyColor)) {
             if (legal(enemyColor, response)) {
                 move.mate = false;
@@ -826,10 +825,15 @@ public:
 
         // evaluate moves in the current position
         int evaluation = 0;
+
+        // order moves
+        std::list<Move> moves = getLegalMoves(color);
+        moves.sort([](const Move& m1, const Move& m2) { return (bool) !m2.capture; });
+
         switch(color) {
             case WHITE: // maximizing player
             evaluation = INT_MIN;
-            for(Move& move : getAlgebraicMoves(color)) {
+            for(Move& move : moves) {
                 evaluation = std::max(evaluation, evaluateMove(move, alpha, beta, depth - 1));
                 if(evaluation >= beta) break;
                 alpha = std::max(alpha, evaluation);
@@ -837,7 +841,7 @@ public:
             break;
             case BLACK: // minimizing player
             evaluation = INT_MAX;
-            for(Move& move : getAlgebraicMoves(color)) {
+            for(Move& move : moves) {
                 evaluation = std::min(evaluation, evaluateMove(move, alpha, beta, depth - 1));
                 if(evaluation <= alpha) break;
                 beta = std::min(beta, evaluation);
@@ -855,7 +859,7 @@ public:
 
         // evaluate resulting position
         const PieceColor color = move.piece->color;
-        move.evaluation = evaluatePosition(OPPOSITE(color), alpha, beta, depth);
+        move.evaluation = evaluatePosition(!color, alpha, beta, depth);
         if(IS_MATE(move.evaluation) && EVAL_COLOR(move.evaluation) == color) color ? move.evaluation++ : move.evaluation--; // if results in checkmate, increment mate counter
 
         // undo move
@@ -870,7 +874,7 @@ public:
         std::vector<Move> bestMoves;
 
         int bestEvaluation = color ? INT_MAX : INT_MIN;
-        for(Move& move : getAlgebraicMoves(color)) {
+        for(Move& move : getLegalMoves(color)) {
             int evaluation = evaluateMove(move, INT_MIN, INT_MAX, depth - 1);
             if(BETTER(color, evaluation, bestEvaluation)) {
                 bestMoves.clear();
@@ -882,46 +886,67 @@ public:
         return bestMoves;
     }
 
-    // returns a randomly selected move from the list of best moves
+    // returns a randomly-selected move from the list of best moves in the current position
     Move bestMove(PieceColor color, unsigned int depth) {
         const std::vector<Move> bestMoves = this->bestMoves(color, depth);
-        return bestMoves.at(std::rand() % bestMoves.size());
+        Move move = bestMoves.at(std::rand() % bestMoves.size());
+        
+        std::string algebraic = toAlgebraic(move);
+        move.algebraic = (char *) malloc(algebraic.length() + 1);
+        strcpy(move.algebraic, algebraic.c_str());
+
+        return move;
     }
 
-    // generate a reduced algebraic notation string from `move`
-    std::string toAlgebraic(Move &move) {
+    // generates a long algebraic notation string from `move`
+    std::string toLongAlgebraic(Move& move) {
         std::string moveStr = "";
 
-        if (move.moveType == MoveType::CASTLE) moveStr = (move.to.file == File::G) ? "O-O" : "O-O-O";
-        else {
-            if (move.piece->type != PAWN) moveStr += " NBRQK"[move.piece->type];
+        if(move.moveType == MoveType::CASTLE) return (move.to.file == File::G) ? "O-O" : "O-O-O";
 
-            // explicitly state ranks and files iff necessary
-            if (move.piece->type != PAWN || move.captureType != CaptureType::NONE) {
-                std::list<Move> candidateMoves;
-                for (Move& candidate : getLegalMoves(move.piece->color))
-                    if (move.to == candidate.to && move.from != candidate.from && move.piece->type == candidate.piece->type) candidateMoves.push_back(candidate);
+        if(move.piece->type != PAWN) moveStr += " NBRQK"[move.piece->type];
 
-                bool rank = false; // whether or not there is rank ambiguity
-                bool file = move.piece->type == PAWN; // whether or not there is file ambiguity
-                for (Move& candidate : candidateMoves) {
-                    if (candidate.from.rank == move.from.rank) file = true;
-                    if (candidate.from.file == move.from.file) rank = true;
-                }
-                if(file) moveStr += ('`' + move.from.file);
-                if(rank) moveStr += ('0' + move.from.rank);
-            }
+        if (move.piece->type != PAWN || move.captureType != CaptureType::NONE) {
+            moveStr += ('`' + move.from.file);
+            moveStr += ('0' + move.from.rank);
+        }
 
-            if (move.captureType != CaptureType::NONE) moveStr += "x";
-            moveStr += ('`' + move.to.file);
-            moveStr += ('0' + move.to.rank);
-            if (move.moveType == MoveType::PROMOTION) {
-                moveStr += "=";
-                moveStr += (" NBRQ")[move.promoteTo];
-            }
+        if (move.captureType != CaptureType::NONE) moveStr += "x";
+        moveStr += ('`' + move.to.file);
+        moveStr += ('0' + move.to.rank);
+
+        if (move.moveType == MoveType::PROMOTION) {
+            moveStr += "=";
+            moveStr += (" NBRQ")[move.promoteTo];
         }
 
         if (move.check) moveStr += "+#"[move.mate];
+
+        return moveStr;
+    }
+
+    // generates a short algebraic notation string from `move`
+    // NOTE: move simplifications (e.g. `Ng1f3` -> `Nf3`) are based on the current position. Use of this function outside of the position from which the move is intended to be played can lead to unpredictable outcomes.
+    std::string toAlgebraic(Move &move) {
+        std::string moveStr = toLongAlgebraic(move);
+
+        // remove unnecessary source square info
+        if (move.piece->type != PAWN || move.captureType != CaptureType::NONE) {
+            std::list<Move> candidateMoves;
+            for (Move& candidate : getLegalMoves(move.piece->color))
+                if (move.to == candidate.to && move.from != candidate.from && move.piece->type == candidate.piece->type) candidateMoves.push_back(candidate);
+
+            bool rank = false; // whether or not there is rank ambiguity
+            bool file = move.piece->type == PAWN; // whether or not there is file ambiguity
+            for (Move& candidate : candidateMoves) {
+                if (candidate.from.rank == move.from.rank) file = true;
+                if (candidate.from.file == move.from.file) rank = true;
+            }
+            
+            std::string::iterator it = moveStr.begin() + (move.piece->type != PAWN);
+            if(!file) it = moveStr.erase(it);
+            if(!rank) moveStr.erase(it);
+        }
 
         return moveStr;
     }
@@ -1032,20 +1057,33 @@ public:
     }
 
     // displays a list of moves played this game
-    void displayMoves() const {
+    void displayMoves() {
         int n = 1;
 
-        std::list<Move>::const_iterator begin = moves.begin();
+        std::list<Move>::iterator begin = moves.begin();
         if(!moves.empty() && moves.front().piece->color == PieceColor::BLACK) {
+            if(!moves.front().algebraic) {
+                Move& move = moves.front();
+                std::string algebraic = toLongAlgebraic(move);
+                move.algebraic = (char *) malloc(algebraic.length() + 1);
+                strcpy(move.algebraic, algebraic.c_str());
+            }
             std::cout << "1... " << moves.front().algebraic << " ";
             begin++;
             n = 3;
         }
 
-        for (std::list<Move>::const_iterator move = begin; move != moves.end(); move++) {
+        for (std::list<Move>::iterator m = begin; m != moves.end(); m++) {
+            Move& move = *m;
+            if(!move.algebraic) {
+                std::string algebraic = toLongAlgebraic(move);
+                move.algebraic = (char *) malloc(algebraic.length() + 1);
+                strcpy(move.algebraic, algebraic.c_str());
+            }
+
             bool color = n % 2;
             if (color) std::cout << n / 2 + 1 << ". ";
-            std::cout << (*move).algebraic << " ";
+            std::cout << (*m).algebraic << " ";
             n++;
         }
 
@@ -1085,6 +1123,6 @@ public:
         displayMoves();
 
         // display check message if in check
-        if (result == GameResult::IN_PROGRESS && inCheck(OPPOSITE(toPlay))) std::cout << "Check!\n";
+        if (result == GameResult::IN_PROGRESS && inCheck(!toPlay)) std::cout << "Check!\n";
     }
 };

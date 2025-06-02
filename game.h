@@ -16,7 +16,7 @@ public:
 
     void run(bool debug = false)  {
         // main loop
-        for(board.display(debug); board.result == GameResult::IN_PROGRESS; board.toPlay = (PieceColor) ((board.toPlay + 1) % 2)) {
+        for(board.display(debug); board.result == GameResult::IN_PROGRESS; board.toPlay = !board.toPlay) {
             board.toPlay ? player2.move(board, debug) : player1.move(board, debug);
             board.display(debug);
         }

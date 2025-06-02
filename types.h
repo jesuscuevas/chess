@@ -89,6 +89,8 @@ struct Move {
 };
 
 /* operator overloads */
+PieceColor operator!(PieceColor color) { return (PieceColor) (!(bool) color); }
+
 File operator+(File file, int8_t offset) { return (File) ((uint8_t) file + offset); }
 File operator+(File file, int offset) { return file + (int8_t) offset; }
 File operator++(File& file, int) { return (file = (File) (file + (int8_t) 1)); }
