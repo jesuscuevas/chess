@@ -4,15 +4,25 @@
 
 /* user-defined types */
 
+typedef uint64_t ZobristHash;
 typedef uint8_t Rank;
 
-enum File { NONE, A, B, C, D, E, F, G, H };
+enum File : uint8_t { NONE, A, B, C, D, E, F, G, H };
 enum SquareColor { LIGHT, DARK };
 enum PieceColor { WHITE, BLACK };
 enum PieceType { PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING };
 enum class MoveType { NORMAL, CASTLE, PROMOTION };
 enum class CaptureType { NONE, NORMAL, EN_PASSANT };
-enum GameResult { IN_PROGRESS, DRAW, WHITE_WINS, BLACK_WINS };
+enum GameResult {
+    IN_PROGRESS = 0,
+    DRAW_BY_STALEMATE,
+    DRAW_BY_REPETITION,
+    DRAW_BY_50_MOVE_RULE,
+    DRAW_BY_INSUFFICIENT_MATERIAL,
+    WIN = 8,
+    WHITE_WINS = WIN,
+    BLACK_WINS
+};
 
 // represents a coordinate
 struct Coord {
@@ -40,6 +50,7 @@ typedef Piece * Square;
 struct GameState {
     bool canCastle[2][2]; // on which side(s) of the board each color has castling rights
     Piece* passant; // candidate for being captured en passant
+    uint8_t plies; // number of half-moves (plies)
 };
 
 // represents a move in memory
@@ -53,7 +64,7 @@ struct Move {
     PieceType promoteTo; // type of piece to promote to (PAWN i.e. NULL implies no promotion)
     bool check; // whether the move causes check (to the opponent)
     bool mate; // whether the move causes either checkmate or stalemate
-    int evaluation; // numerical evaluation of move (not always calculated)
+    int32_t evaluation; // numerical evaluation of move (not always calculated)
 
     Move() {
         algebraic = NULL;
@@ -125,6 +136,10 @@ CoordOffset operator-(CoordOffset offset1, CoordOffset offset2) {
 
 bool operator==(const Piece& p1, const Piece& p2) {
     return (p1.color == p2.color) && (p1.location == p2.location) && (p1.type == p2.type);
+}
+
+bool operator==(const Move& m1, const Move& m2) {
+    return m1.piece->type == m2.piece->type && m1.from == m2.from && m2.to == m2.to;
 }
 
 /* constants */

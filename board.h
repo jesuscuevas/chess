@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "random.h"
 #include "types.h"
 
 // resolves to the (absolute) rank number of `color`'s `n`th rank (1-8)
@@ -72,9 +73,7 @@ class Board {
 public:
     GameResult result = GameResult::IN_PROGRESS;
     PieceColor toPlay = PieceColor::WHITE;
-    int moveNumber = 1; // move number (currently unused)
-    int halfMoveNumber = 1; // number of half moves (plies) - to be used eventually for the fifty-move rule
-private:
+
     enum Side { QUEEN, KING };
 
     SquareColor colors[9][9]; // square colors used for display() calls
@@ -86,6 +85,39 @@ private:
     std::map<PieceType, std::list<Piece *>> captured[2]; // captured pieces (pieces no longer on the board)
     std::string fg[2] = {"\x1b[38:5:255m", "\x1b[38:5:232m"}; // foreground terminal color
     std::string bg[2] = {"\x1b[48:5:248m", "\x1b[48:5:240m"}; // background terminal color
+
+    // Zobrist hashing data
+    uint64_t zobristPieces[2][6][9][9]; // Zobrist hash value for encoding color/piece-type/square combos
+    uint64_t zobristCastling[2][2]; // Zobrist hash value for castling rights
+    uint64_t zobristPassant[9]; // Zobrist hash value for en passant candidate files
+    uint64_t zobristBlackToPlay; // Zobrist hash value for encoding that black is to play
+    Position transpositionTable[NPOSITIONS]; // transposition table
+
+    // number of times each position has been reached (used for detecting draws by repetition)
+    std::map<ZobristHash, uint8_t> occurences;
+
+    // initialize Zobrist hash values
+    void initHashValues() {
+        Random random;
+
+        for(PieceColor color : {WHITE, BLACK}) {
+            // color-piece-square combos
+            for(PieceType type : PIECE_TYPES)
+                for(Rank rank = 1; rank <= 8; rank++)
+                    for(File file = File::A; file <= File::H; file++)
+                        zobristPieces[color][type][rank][file] = random.rand64();
+
+            // castling rights
+            for(Side side : {Side::QUEEN, Side::KING}) zobristCastling[color][side] = random.rand64();
+        }
+        
+        // passant files
+        for(File file = File::A; file <= File::H; file++)
+            zobristPassant[file] = random.rand64();
+
+        // black to play
+        zobristBlackToPlay = random.rand64();
+    }
 
 public:
     Square& operator[](Coord& coord) {
@@ -123,6 +155,8 @@ public:
 
     // classical starting position (default)
     Board() {
+        initHashValues();
+
         // initialize board state
         GameState state;
         state.canCastle[PieceColor::WHITE][Side::QUEEN] = true;
@@ -194,6 +228,9 @@ public:
         for (Rank rank = 1; rank <= 8; rank++)
             for (File file = File::A; file <= File::H; file++)
                 colors[rank][file] = (SquareColor) ((rank + file + 1) % 2);
+        
+        // load position Zobrist key into positions list
+        occurences[hash()] = 1;
     }
 
     // load board state from FEN string
@@ -205,6 +242,9 @@ public:
             std::cerr << "invalid FEN text\n";
             exit(EXIT_FAILURE);
         }
+
+        // initialize Zobrist hash position encodings
+        initHashValues();
 
         // piece placement
         size_t curr = 0;
@@ -273,13 +313,12 @@ public:
         curr = next + 1;
         next = fen.find(" ", curr);
         token = fen.substr(curr, next - curr);
-        halfMoveNumber = std::stoi(token);
+        state.plies = std::stoi(token);
 
         // full moves
         curr = next + 1;
         next = fen.length();
         token = fen.substr(curr, next - curr);
-        moveNumber = std::stoi(token);
 
         // load list of references to remaining pieces (all pieces)
         for (uint8_t color = PieceColor::WHITE; color <= PieceColor::BLACK; color++)
@@ -293,6 +332,9 @@ public:
 
         // update state
         states.push(state);
+
+        // load position Zobrist key into positions list
+        occurences[hash()] = 1;
     }
 
     // returns a list of all pseudolegal moves for color `color`
@@ -445,11 +487,8 @@ public:
         Square& source = board[rank][file];
         Square& target = board[rankPrime][filePrime];
 
-        // check for game-ending conditions first
-        if (move.mate) {
-            if (move.check) result = color ? GameResult::BLACK_WINS : GameResult::WHITE_WINS;
-            else result = GameResult::DRAW; // i.e. stalemate (other draw conditions are not yet implemented)
-        }
+        // check for checkmate or stalemate
+        if (move.mate) result = move.check ? (color ? GameResult::BLACK_WINS : GameResult::WHITE_WINS) : GameResult::DRAW_BY_STALEMATE;
 
         // handle castling logic
         if (state.canCastle[color][Side::QUEEN] || state.canCastle[color][Side::KING]) {
@@ -518,18 +557,31 @@ public:
         target = source;
         source = NULL;
 
+        // check for draw by 50-move rule
+        if(move.piece->type == PAWN || move.captureType != CaptureType::NONE) state.plies = 0;
+        else if(++state.plies >= 100) result = GameResult::DRAW_BY_50_MOVE_RULE;
+
         // push move info and board state to their respective data structures
         moves.push_back(move);
         states.push(state);
+
+        // update side to play variable
+        toPlay = !toPlay;
+
+        // check for draw by repetition
+        ZobristHash zobristKey = hash();
+        if(++occurences[zobristKey] >= 3) result = GameResult::DRAW_BY_REPETITION;
     }
 
     // undo a move (temporarily assumes that `move` is on the top of the `moves` stack)
     void unmove(Move& move) {
         Piece * piece = move.piece;
+        Piece * capturedPiece = move.capture;
         PieceColor color = !piece->color;
 
-        // locate captured piece (if there is one)
-        Piece * capturedPiece = (move.captureType == CaptureType::EN_PASSANT) ? captured[color][PAWN].back() : move.capture;
+        // decrement position repetition count
+        ZobristHash zobristKey = hash();
+        if(occurences[zobristKey] > 0) occurences[zobristKey]--;
 
         // undo game-ending changes
         result = GameResult::IN_PROGRESS;
@@ -579,6 +631,9 @@ public:
         // remove the move from move list
         moves.pop_back();
         states.pop();
+
+        // update side to play variable
+        toPlay = !toPlay;
     }
 
     // fills move struct and returns whether move is pseudo-legal
@@ -771,11 +826,43 @@ public:
         return true;
     }
 
+    // returns a Zobrist hash of the current position
+    uint64_t hash() const {
+        uint64_t hash = 0;
+
+        // piece positions
+        for(Rank rank = 1; rank <= 8; rank++) {
+            for(File file = File::A; file <= File::H; file++) {
+                if(board[rank][file]) {
+                    Piece * piece = board[rank][file];
+                    hash ^= zobristPieces[piece->color][piece->type][rank][file];
+                }
+            }
+        }
+
+        // castling rights
+        for(PieceColor color : {WHITE, BLACK})
+            for(Side side : {QUEEN, KING})
+                if(states.top().canCastle[color][side])
+                    hash ^= zobristCastling[color][side];
+        
+        // en passant square
+        if(states.top().passant) hash ^= zobristPassant[states.top().passant->location.file];
+
+        // side to play
+        if(toPlay == PieceColor::BLACK) hash ^= zobristBlackToPlay;
+
+        return hash;
+    }
+
     // evaluate terminal node
     int evaluate() {
         // evaluate end of game conditions
         switch(result) {
-            case GameResult::DRAW: return 0;
+            case GameResult::DRAW_BY_STALEMATE:
+            case GameResult::DRAW_BY_REPETITION:
+            case GameResult::DRAW_BY_50_MOVE_RULE:
+            case GameResult::DRAW_BY_INSUFFICIENT_MATERIAL: return 0;
             case GameResult::WHITE_WINS: return INT_MAX; // +M0
             case GameResult::BLACK_WINS: return INT_MIN; // -M0
             case GameResult::IN_PROGRESS: break;
@@ -785,8 +872,8 @@ public:
 
         // material evaluation
         for(PieceType type : PIECE_TYPES) {
-            if(remaining[WHITE].contains(type)) evaluation += remaining[WHITE].at(type).size() * PIECE_VALUES[type];
-            if(remaining[BLACK].contains(type)) evaluation -= remaining[BLACK].at(type).size() * PIECE_VALUES[type];
+            evaluation += remaining[WHITE].at(type).size() * PIECE_VALUES[type];
+            evaluation -= remaining[BLACK].at(type).size() * PIECE_VALUES[type];
         }
 
         // positional evaluation
@@ -1118,6 +1205,11 @@ public:
             std::cout << " " << rank << "\n";
         }
         std::cout << "   a  b  c  d  e  f  g  h\n\n";
+
+        if(debug) {
+            uint64_t key = hash();
+            std::cout << "This position has occurred " << (int) occurences[key] << " time(s)\n";
+        }
         
         // display moves
         displayMoves();

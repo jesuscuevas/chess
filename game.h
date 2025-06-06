@@ -15,16 +15,27 @@ public:
     Game(std::string fen, unsigned int depth) : Game(depth) { board = Board(fen); }
 
     void run(bool debug = false)  {
+        board.display(debug);
+
         // main loop
-        for(board.display(debug); board.result == GameResult::IN_PROGRESS; board.toPlay = !board.toPlay) {
+        while(board.result == GameResult::IN_PROGRESS) {
             board.toPlay ? player2.move(board, debug) : player1.move(board, debug);
             board.display(debug);
         }
 
         // display game outcome - stalemate is currently the only draw condition and checkmate the only win condition
         switch (board.result) {
-        case GameResult::DRAW:
-            std::cout << "Stalemate! Draw!\n";
+        case GameResult::DRAW_BY_STALEMATE:
+            std::cout << "Drawn by stalemate!\n";
+            break;
+        case GameResult::DRAW_BY_REPETITION:
+            std::cout << "Drawn by threefold repetition!\n";
+            break;
+        case GameResult::DRAW_BY_50_MOVE_RULE:
+            std::cout << "Drawn by the 50 move rule\n";
+            break;
+        case GameResult::DRAW_BY_INSUFFICIENT_MATERIAL:
+            std::cout << "Drawn by insufficient material\n";
             break;
         case GameResult::WHITE_WINS:
             std::cout << "Checkmate! White wins!\n";
