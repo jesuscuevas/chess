@@ -15,6 +15,9 @@
 #include "random.h"
 #include "types.h"
 
+// number of positions stored in the transposition table
+#define NPOSITIONS 32500
+
 // resolves to the (absolute) rank number of `color`'s `n`th rank (1-8)
 #define RANK(color, n) ((Rank) (color ? (9 - n) : n))
 
@@ -909,19 +912,33 @@ public:
     int evaluatePosition(PieceColor color, int alpha, int beta, unsigned int depth) {
         // evaluate heuristic node
         if(depth == 0 || result != GameResult::IN_PROGRESS) return evaluate();
-
-        // evaluate moves in the current position
-        int evaluation = 0;
+        
+        // look up a position in the transposition table
+        uint64_t hash = this->hash();
+        Position& position = transpositionTable[hash % NPOSITIONS];
+        if(position.key == hash && position.depth >= depth)
+            return position.evaluation;
 
         // order moves
         std::list<Move> moves = getLegalMoves(color);
-        moves.sort([](const Move& m1, const Move& m2) { return (bool) !m2.capture; });
+        if(position.key == hash) moves.sort([position](const Move& m1, const Move& m2) {
+            return (m1 == position.bestMove || (!(m2 == position.bestMove) && m2.capture == NULL));
+        });
+        else moves.sort([](const Move& m1, const Move& m2) { return (bool) !m2.capture; });
+
+        // evaluate the current position
+        position.bestMove.evaluation = color ? INT_MIN : INT_MAX;
+        int evaluation = 0;
 
         switch(color) {
             case WHITE: // maximizing player
             evaluation = INT_MIN;
             for(Move& move : moves) {
-                evaluation = std::max(evaluation, evaluateMove(move, alpha, beta, depth - 1));
+                move.evaluation = evaluateMove(move, alpha, beta, depth - 1);
+                if(move.evaluation > evaluation) {
+                    position.bestMove = move;
+                    evaluation = move.evaluation;
+                }
                 if(evaluation >= beta) break;
                 alpha = std::max(alpha, evaluation);
             }
@@ -929,12 +946,21 @@ public:
             case BLACK: // minimizing player
             evaluation = INT_MAX;
             for(Move& move : moves) {
-                evaluation = std::min(evaluation, evaluateMove(move, alpha, beta, depth - 1));
+                move.evaluation = evaluateMove(move, alpha, beta, depth - 1);
+                if(move.evaluation < evaluation) {
+                    position.bestMove = move;
+                    evaluation = move.evaluation;
+                }
                 if(evaluation <= alpha) break;
                 beta = std::min(beta, evaluation);
             }
             break;
         }
+
+        // write to transposition table
+        position.key = hash;
+        position.evaluation = evaluation;
+        position.depth = depth;
 
         return evaluation;
     }

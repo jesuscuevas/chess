@@ -99,6 +99,14 @@ struct Move {
     }
 };
 
+// represents a chess position
+struct Position {
+    uint64_t key; // Zobrist hash of position
+    Move bestMove; // best move or refutation move
+    int32_t evaluation; // numerical evaluation
+    uint32_t depth; // depth of evaluation
+};
+
 /* operator overloads */
 PieceColor operator!(PieceColor color) { return (PieceColor) (!(bool) color); }
 
