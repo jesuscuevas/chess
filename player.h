@@ -65,9 +65,10 @@ public:
 
                 // in debug mode, add move evaluations and sort moves by numerical evaluation
                 if(debug) {
+                    PieceColor sideToPlay = board.toPlay;
                     for (Move& move : moves) board.evaluateMove(move, INT_MIN, INT_MAX, depth);
-                    moves.sort([board](const Move& a, const Move& b) {
-                        return BETTER(board.toPlay, a.evaluation, b.evaluation);
+                    moves.sort([sideToPlay](const Move& a, const Move& b) {
+                        return BETTER(sideToPlay, a.evaluation, b.evaluation);
                     });
 
                     for(Move& move : moves) std::cout << move.algebraic << " (" << evaluationString(move.evaluation) << ")\n";
