@@ -1057,7 +1057,7 @@ public:
             }
             
             std::string::iterator it = moveStr.begin() + (move.piece->type != PAWN);
-            if(!file) it = moveStr.erase(it);
+            it = file ? ++it : moveStr.erase(it);
             if(!rank) moveStr.erase(it);
         }
 
